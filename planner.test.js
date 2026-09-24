@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { courses } from './courses.js';
 import { initialPlan, validPlan, moveCourse, conflicts } from './planner.js';
-test('Purdue baseline contains all 41 unique course blocks and no scheddaduling conflicts',()=>{
- const plan=initialPlan(courses);assert.equal(courses.length,41);assert.ok(validPlan(plan,courses));assert.deepEqual(courses.flatMap(c=>conflicts(c,plan,courses)),[]);
+test('Purdue baseline contains all 44 unique course blocks and no scheduling conflicts',()=>{
+ const plan=initialPlan(courses);assert.equal(courses.length,44);assert.ok(validPlan(plan,courses));assert.deepEqual(courses.flatMap(c=>conflicts(c,plan,courses)),[]);
 });
 test('moving and reordering retain each course exactly once without changing source',()=>{
  const plan=initialPlan(courses),key=plan[0][0],before=plan[3][1];
@@ -40,8 +40,8 @@ test('deleting a prerequisite updates warnings and removes its note without chan
  const calc=courses.find(c=>c.id==='Calculus-1'), next=courses.find(c=>c.id==='Calculus-2');
  const original=setCourseNote(initialState(courses),calc.key,'Intended course');
  const deleted=deleteCourse(original,calc.key);
- assert.equal(deleted.plan.flat().length,40);assert.equal(deleted.notes[calc.key],undefined);
- assert.equal(original.notes[calc.key],'Intended course');assert.equal(original.plan.flat().length,41);
+ assert.equal(deleted.plan.flat().length,43);assert.equal(deleted.notes[calc.key],undefined);
+ assert.equal(original.notes[calc.key],'Intended course');assert.equal(original.plan.flat().length,44);
  assert.ok(conflicts(next,deleted.plan,courses).length);assert.deepEqual(conflicts(calc,deleted.plan,courses),[]);
  assert.ok(validState(deleted,courses));
 });
@@ -59,4 +59,23 @@ test('state validation rejects invalid terms, duplicate semesters and corrupt no
   const bad=structuredClone(state);mutate(bad);assert.equal(validState(bad,courses),false);
  }
  const empty={...state,plan:state.plan.map(()=>[])};assert.ok(validState(empty,courses));
+});
+
+import { splitAdvancedEEPlan, migrateAdvancedEEState } from './planner.js';
+test('combined advanced EE requirement migrates in place with its note and eight credits',()=>{
+ const state=initialState(courses);
+ const parts=courses.filter(c=>c.key.startsWith('course-38-'));
+ assert.deepEqual(parts.map(c=>c.min),[3,3,1,1]);
+ assert.equal(parts.reduce((sum,c)=>sum+c.max,0),8);
+ state.plan=state.plan.map(keys=>keys.filter(k=>!parts.some(c=>c.key===k)));
+ state.plan[2].splice(1,0,'course-38');state.notes['course-38']='My choices';
+ const migrated=migrateAdvancedEEState(state);
+ assert.ok(validState(migrated,courses));
+ assert.deepEqual(migrated.plan[2].slice(1,5),parts.map(c=>c.key));
+ assert.equal(migrated.notes[parts[0].key],'My choices');
+ assert.equal(state.notes['course-38'],'My choices');
+ assert.deepEqual(migrateAdvancedEEState(migrated),migrated);
+ assert.deepEqual(splitAdvancedEEPlan(state.plan),migrated.plan);
+ const deleted={...state,plan:state.plan.map(keys=>keys.filter(k=>k!=='course-38')),notes:{}};
+ assert.deepEqual(migrateAdvancedEEState(deleted),deleted);
 });

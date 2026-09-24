@@ -46,3 +46,20 @@ export function setCourseNote(state, key, note) {
   if(note.trim()) next.notes[key]=note.trim(); else delete next.notes[key];
   return next;
 }
+
+// Expand the former combined requirement in saved plans without moving it.
+export function splitAdvancedEEPlan(plan) {
+  if (!Array.isArray(plan) || !plan.every(Array.isArray)) return plan;
+  const replacements = ['course-38-selective-1', 'course-38-selective-2', 'course-38-lab-1', 'course-38-lab-2'];
+  return plan.map(keys => keys.flatMap(key => key === 'course-38' ? replacements : [key]));
+}
+export function migrateAdvancedEEState(state) {
+  if (!state || !Array.isArray(state.plan) || !state.plan.every(Array.isArray) || !state.plan.flat().includes('course-38')) return state;
+  const next = structuredClone(state);
+  next.plan = splitAdvancedEEPlan(next.plan);
+  if (next.notes && Object.hasOwn(next.notes, 'course-38')) {
+    next.notes['course-38-selective-1'] = next.notes['course-38'];
+    delete next.notes['course-38'];
+  }
+  return next;
+}

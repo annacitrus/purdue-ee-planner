@@ -1,6 +1,6 @@
 import { courses } from './courses.js';
 import { courseHover } from './hover.js';
-import { initialPlan, validPlan, moveCourse, conflicts, initialState, validState, addSemester, deleteCourse, setCourseNote } from './planner.js';
+import { splitAdvancedEEPlan, migrateAdvancedEEState, initialPlan, validPlan, moveCourse, conflicts, initialState, validState, addSemester, deleteCourse, setCourseNote } from './planner.js';
 const $ = s => document.querySelector(s);
 const source = 'https://engineering.purdue.edu/Engr/Academics/Undergraduate/majors/2025-26/majors/EE_curriculum_map';
 const years = ['Freshman','Sophomore','Junior','Senior'];
@@ -12,7 +12,7 @@ const hoverClasses = ['prereq', 'immediate', 'coreq', 'postreq'];
 const credits = list => { const min = list.reduce((a,c)=>a+c.min,0), max=list.reduce((a,c)=>a+c.max,0); return min === max ? `${min}` : `${min}–${max}`; };
 const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state=initialState(courses), plan=state.plan, history=[], dragging=null, selected=null, toastTimer;
-try { const saved=JSON.parse(localStorage.getItem('purdue-ee-plan-v2')); if(validState(saved,courses)) state=saved; else { const legacy=JSON.parse(localStorage.getItem('purdue-ee-plan-v1')); if(validPlan(legacy,courses)) state.plan=legacy; } plan=state.plan; } catch {}
+try { const saved=migrateAdvancedEEState(JSON.parse(localStorage.getItem('purdue-ee-plan-v2'))); if(validState(saved,courses)) state=saved; else { const legacy=splitAdvancedEEPlan(JSON.parse(localStorage.getItem('purdue-ee-plan-v1'))); if(validPlan(legacy,courses)) state.plan=legacy; } plan=state.plan; } catch {}
 function category(c) { if (/Calculus|Chemistry|Physics|^MA|^PHYS/.test(c.id)) return 'foundation'; return c.elective ? 'elective' : 'core'; }
 function notify(message) { $('#toast').textContent=message; $('#toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),3500); }
 function save() { try { localStorage.setItem('purdue-ee-plan-v2',JSON.stringify(state)); $('#save-status').textContent='● Saved on this device'; } catch { $('#save-status').textContent='Session only · storage unavailable'; } }

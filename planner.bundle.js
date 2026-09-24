@@ -600,15 +600,57 @@ const courses = [
     "elective": false
   },
   {
-    "key": "course-38",
-    "id": "EE/Elective(AD)-lab",
-    "name": "Advanced EE Selective (with Lab)",
-    "label": "Advanced EE Selective (with Lab)",
-    "min": 8,
-    "max": 8,
+    "key": "course-38-selective-1",
+    "id": "EE/Elective(AD)",
+    "name": "Advanced EE Selective",
+    "label": "Advanced EE Selective",
+    "min": 3,
+    "max": 3,
     "pre": [],
     "co": [],
-    "description": "Visit the Electrical Engineering catalog page catalog.purdue.edu for more information on requirements for Advanced EE Selective.",
+    "description": "Select a 3-credit Advanced EE Selective course to complete this requirement.",
+    "url": "https://catalog.purdue.edu",
+    "semester": 7,
+    "elective": true
+  },
+  {
+    "key": "course-38-selective-2",
+    "id": "EE/Elective(AD)",
+    "name": "Advanced EE Selective",
+    "label": "Advanced EE Selective",
+    "min": 3,
+    "max": 3,
+    "pre": [],
+    "co": [],
+    "description": "Select a 3-credit Advanced EE Selective course to complete this requirement.",
+    "url": "https://catalog.purdue.edu",
+    "semester": 7,
+    "elective": true
+  },
+  {
+    "key": "course-38-lab-1",
+    "id": "EE/Elective-lab",
+    "name": "Advanced EE Lab",
+    "label": "Advanced EE Lab",
+    "min": 1,
+    "max": 1,
+    "pre": [],
+    "co": [],
+    "description": "Select a 1-credit Advanced EE Lab course to complete this requirement.",
+    "url": "https://catalog.purdue.edu",
+    "semester": 7,
+    "elective": true
+  },
+  {
+    "key": "course-38-lab-2",
+    "id": "EE/Elective-lab",
+    "name": "Advanced EE Lab",
+    "label": "Advanced EE Lab",
+    "min": 1,
+    "max": 1,
+    "pre": [],
+    "co": [],
+    "description": "Select a 1-credit Advanced EE Lab course to complete this requirement.",
     "url": "https://catalog.purdue.edu",
     "semester": 7,
     "elective": true
@@ -693,6 +735,23 @@ function setCourseNote(state, key, note) {
   return next;
 }
 
+// Expand the former combined requirement in saved plans without moving it.
+function splitAdvancedEEPlan(plan) {
+  if (!Array.isArray(plan) || !plan.every(Array.isArray)) return plan;
+  const replacements = ['course-38-selective-1', 'course-38-selective-2', 'course-38-lab-1', 'course-38-lab-2'];
+  return plan.map(keys => keys.flatMap(key => key === 'course-38' ? replacements : [key]));
+}
+function migrateAdvancedEEState(state) {
+  if (!state || !Array.isArray(state.plan) || !state.plan.every(Array.isArray) || !state.plan.flat().includes('course-38')) return state;
+  const next = structuredClone(state);
+  next.plan = splitAdvancedEEPlan(next.plan);
+  if (next.notes && Object.hasOwn(next.notes, 'course-38')) {
+    next.notes['course-38-selective-1'] = next.notes['course-38'];
+    delete next.notes['course-38'];
+  }
+  return next;
+}
+
 
 // Use the map's requirements, extending downstream highlighting to electives.
 function courseHover(courseId, courses) {
@@ -738,7 +797,7 @@ const hoverClasses = ['prereq', 'immediate', 'coreq', 'postreq'];
 const credits = list => { const min = list.reduce((a,c)=>a+c.min,0), max=list.reduce((a,c)=>a+c.max,0); return min === max ? `${min}` : `${min}–${max}`; };
 const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state=initialState(courses), plan=state.plan, history=[], dragging=null, selected=null, toastTimer;
-try { const saved=JSON.parse(localStorage.getItem('purdue-ee-plan-v2')); if(validState(saved,courses)) state=saved; else { const legacy=JSON.parse(localStorage.getItem('purdue-ee-plan-v1')); if(validPlan(legacy,courses)) state.plan=legacy; } plan=state.plan; } catch {}
+try { const saved=migrateAdvancedEEState(JSON.parse(localStorage.getItem('purdue-ee-plan-v2'))); if(validState(saved,courses)) state=saved; else { const legacy=splitAdvancedEEPlan(JSON.parse(localStorage.getItem('purdue-ee-plan-v1'))); if(validPlan(legacy,courses)) state.plan=legacy; } plan=state.plan; } catch {}
 function category(c) { if (/Calculus|Chemistry|Physics|^MA|^PHYS/.test(c.id)) return 'foundation'; return c.elective ? 'elective' : 'core'; }
 function notify(message) { $('#toast').textContent=message; $('#toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),3500); }
 function save() { try { localStorage.setItem('purdue-ee-plan-v2',JSON.stringify(state)); $('#save-status').textContent='● Saved on this device'; } catch { $('#save-status').textContent='Session only · storage unavailable'; } }
