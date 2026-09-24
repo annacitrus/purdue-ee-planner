@@ -1,0 +1,7 @@
+{
+  "name": "purdue-ee-planner",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "node scripts/build.cjs", "prestart": "node scripts/build.cjs", "start": "node server.cjs", "predev": "node scripts/build.cjs", "dev": "node server.cjs", "test": "node --test" }
+}
