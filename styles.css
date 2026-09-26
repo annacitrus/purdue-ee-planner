@@ -15,3 +15,5 @@
 .relationship-legend{flex-wrap:wrap;gap:10px 18px}
 .dot.hover-ancestor{background:#9D9795}.dot.hover-immediate{background:#C4BFC0}.dot.hover-coreq{background:#FFEB8C}.dot.hover-postreq{background:#DAAA00}.dot.hover-current{background:#000}
 @media(prefers-reduced-motion:reduce){.course-card{transition:none}.course-card:hover{transform:none}}
+
+#course-credits{width:100%;padding:10px;font:inherit;border:1px solid var(--line);border-radius:5px}#course-credits:focus-visible{outline:3px solid #b49354;outline-offset:3px}

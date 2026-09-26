@@ -16,7 +16,7 @@ export function conflicts(course, plan, courses) {
 }
 export const terms = ['Fall', 'Winter', 'Spring', 'Summer'];
 export function initialState(courses) {
-  return {plan:initialPlan(courses), semesters:Array.from({length:8}, (_,i)=>({year:Math.floor(i/2), term:i%2?'Spring':'Fall'})), notes:{}};
+  return {plan:initialPlan(courses), semesters:Array.from({length:8}, (_,i)=>({year:Math.floor(i/2), term:i%2?'Spring':'Fall'})), notes:{}, creditHours:{}};
 }
 export function validState(state, courses) {
   if (!state || !Array.isArray(state.plan) || !Array.isArray(state.semesters) || !state.semesters.length || state.plan.length !== state.semesters.length || !state.plan.every(Array.isArray)) return false;
@@ -24,7 +24,21 @@ export function validState(state, courses) {
   if (new Set(keys).size !== keys.length || !keys.every(k=>courses.some(c=>c.key===k))) return false;
   const rank = s=>s.year*4+terms.indexOf(s.term);
   if (!state.semesters.every((s,i)=>s && Number.isInteger(s.year) && s.year>=0 && terms.includes(s.term) && (!i || rank(s)>rank(state.semesters[i-1])))) return false;
+  const overrides=state.creditHours;
+  if (overrides !== undefined && (!overrides || typeof overrides!=='object' || Array.isArray(overrides) || !Object.entries(overrides).every(([k,v])=>keys.includes(k) && validCreditHours(v)))) return false;
   return !!state.notes && typeof state.notes==='object' && !Array.isArray(state.notes) && Object.entries(state.notes).every(([k,v])=>keys.includes(k) && typeof v==='string');
+}
+function validCreditHours(value) { return typeof value==='number' && Number.isFinite(value) && value>=0 && value<=30; }
+export function courseCredits(state, course) {
+  const value=state.creditHours?.[course.key];
+  return validCreditHours(value) ? {min:value,max:value} : {min:course.min,max:course.max};
+}
+export function setCourseCredits(state, key, value) {
+  if (!state.plan.flat().includes(key) || (value!==null && !validCreditHours(value))) return state;
+  const next=structuredClone(state);
+  next.creditHours ??= {};
+  if (value===null) delete next.creditHours[key]; else next.creditHours[key]=value;
+  return next;
 }
 export function addSemester(state, year, term) {
   if (!Number.isInteger(year) || year<0 || !terms.includes(term) || state.semesters.some(s=>s.year===year && s.term===term)) return state;
@@ -38,6 +52,7 @@ export function deleteCourse(state, key) {
   if(!state.plan.flat().includes(key)) return state;
   const next=structuredClone(state);
   next.plan=next.plan.map(keys=>keys.filter(k=>k!==key)); delete next.notes[key];
+  if(next.creditHours) delete next.creditHours[key];
   return next;
 }
 export function setCourseNote(state, key, note) {

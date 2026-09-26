@@ -23,6 +23,36 @@ test('corrupt stored plans and unknown keys are rejected',()=>{
  const plan=initialPlan(courses);assert.equal(validPlan([[]],courses),false);const bad=structuredClone(plan);bad[0][0]=bad[0][1];assert.equal(validPlan(bad,courses),false);assert.deepEqual(moveCourse(plan,'unknown',0),plan);
 });
 import { initialState, validState, addSemester, deleteCourse, setCourseNote } from './planner.js';
+import { courseCredits, setCourseCredits } from './planner.js';
+
+test('Calculus II credits persist through saving and moving, and can be restored',()=>{
+ const calc=courses.find(c=>c.id==='Calculus-2'), original=initialState(courses);
+ assert.deepEqual(courseCredits(original,calc),{min:4,max:5});
+ let state=setCourseCredits(original,calc.key,4);
+ state=addSemester(state,0,'Summer');state={...state,plan:moveCourse(state.plan,calc.key,2)};
+ state=JSON.parse(JSON.stringify(state));
+ assert.ok(validState(state,courses));assert.deepEqual(courseCredits(state,calc),{min:4,max:4});
+ const total=s=>s.plan.flat().reduce((sum,key)=>sum+courseCredits(s,courses.find(c=>c.key===key)).max,0);
+ assert.equal(total(state),total(original)-1);
+ assert.deepEqual(courseCredits(original,calc),{min:4,max:5});
+ assert.deepEqual(courseCredits(setCourseCredits(state,calc.key,null),calc),{min:4,max:5});
+ const deleted=deleteCourse(state,calc.key);
+ assert.equal(deleted.creditHours[calc.key],undefined);assert.ok(validState(deleted,courses));
+ assert.deepEqual(initialState(courses).creditHours,{});
+});
+
+test('old saved plans load and invalid credit overrides are rejected',()=>{
+ const state=initialState(courses),key=state.plan[0][0];delete state.creditHours;
+ assert.ok(validState(state,courses));
+ assert.ok(validState(setCourseCredits(state,key,3.5),courses));
+ assert.ok(validState(setCourseCredits(state,key,0),courses));
+ for(const value of [-1,31,NaN,Infinity,'4',null]) {
+  assert.equal(validState({...state,creditHours:{[key]:value}},courses),false);
+  if(value!==null) assert.equal(setCourseCredits(state,key,value),state);
+ }
+ for(const creditHours of [null,[],4,{unknown:4}]) assert.equal(validState({...state,creditHours},courses),false);
+ assert.equal(setCourseCredits(state,'unknown',4),state);
+});
 
 test('new terms sort within academic years without moving courses to a different term',()=>{
  const original=initialState(courses);

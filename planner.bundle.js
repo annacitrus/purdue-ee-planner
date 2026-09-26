@@ -704,7 +704,7 @@ function conflicts(course, plan, courses) {
 }
 const terms = ['Fall', 'Winter', 'Spring', 'Summer'];
 function initialState(courses) {
-  return {plan:initialPlan(courses), semesters:Array.from({length:8}, (_,i)=>({year:Math.floor(i/2), term:i%2?'Spring':'Fall'})), notes:{}};
+  return {plan:initialPlan(courses), semesters:Array.from({length:8}, (_,i)=>({year:Math.floor(i/2), term:i%2?'Spring':'Fall'})), notes:{}, creditHours:{}};
 }
 function validState(state, courses) {
   if (!state || !Array.isArray(state.plan) || !Array.isArray(state.semesters) || !state.semesters.length || state.plan.length !== state.semesters.length || !state.plan.every(Array.isArray)) return false;
@@ -712,7 +712,21 @@ function validState(state, courses) {
   if (new Set(keys).size !== keys.length || !keys.every(k=>courses.some(c=>c.key===k))) return false;
   const rank = s=>s.year*4+terms.indexOf(s.term);
   if (!state.semesters.every((s,i)=>s && Number.isInteger(s.year) && s.year>=0 && terms.includes(s.term) && (!i || rank(s)>rank(state.semesters[i-1])))) return false;
+  const overrides=state.creditHours;
+  if (overrides !== undefined && (!overrides || typeof overrides!=='object' || Array.isArray(overrides) || !Object.entries(overrides).every(([k,v])=>keys.includes(k) && validCreditHours(v)))) return false;
   return !!state.notes && typeof state.notes==='object' && !Array.isArray(state.notes) && Object.entries(state.notes).every(([k,v])=>keys.includes(k) && typeof v==='string');
+}
+function validCreditHours(value) { return typeof value==='number' && Number.isFinite(value) && value>=0 && value<=30; }
+function courseCredits(state, course) {
+  const value=state.creditHours?.[course.key];
+  return validCreditHours(value) ? {min:value,max:value} : {min:course.min,max:course.max};
+}
+function setCourseCredits(state, key, value) {
+  if (!state.plan.flat().includes(key) || (value!==null && !validCreditHours(value))) return state;
+  const next=structuredClone(state);
+  next.creditHours ??= {};
+  if (value===null) delete next.creditHours[key]; else next.creditHours[key]=value;
+  return next;
 }
 function addSemester(state, year, term) {
   if (!Number.isInteger(year) || year<0 || !terms.includes(term) || state.semesters.some(s=>s.year===year && s.term===term)) return state;
@@ -726,6 +740,7 @@ function deleteCourse(state, key) {
   if(!state.plan.flat().includes(key)) return state;
   const next=structuredClone(state);
   next.plan=next.plan.map(keys=>keys.filter(k=>k!==key)); delete next.notes[key];
+  if(next.creditHours) delete next.creditHours[key];
   return next;
 }
 function setCourseNote(state, key, note) {
@@ -794,7 +809,7 @@ const semesterName = i => `${yearName(state.semesters[i].year)} - ${state.semest
 const byKey = new Map(courses.map(c => [c.key,c]));
 const hoverById = new Map(courses.map(c => [c.id.trim(), courseHover(c.id.trim(), courses)]));
 const hoverClasses = ['prereq', 'immediate', 'coreq', 'postreq'];
-const credits = list => { const min = list.reduce((a,c)=>a+c.min,0), max=list.reduce((a,c)=>a+c.max,0); return min === max ? `${min}` : `${min}–${max}`; };
+const credits = list => { const min = list.reduce((a,c)=>a+courseCredits(state,c).min,0), max=list.reduce((a,c)=>a+courseCredits(state,c).max,0); return min === max ? `${min}` : `${min}–${max}`; };
 const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state=initialState(courses), plan=state.plan, history=[], dragging=null, selected=null, toastTimer;
 try { const saved=migrateAdvancedEEState(JSON.parse(localStorage.getItem('purdue-ee-plan-v2'))); if(validState(saved,courses)) state=saved; else { const legacy=splitAdvancedEEPlan(JSON.parse(localStorage.getItem('purdue-ee-plan-v1'))); if(validPlan(legacy,courses)) state.plan=legacy; } plan=state.plan; } catch {}
@@ -806,7 +821,7 @@ function render() {
   const activeCourses=plan.flat().map(k=>byKey.get(k));
   $('#total-credits').textContent=credits(activeCourses); $('#course-count').textContent=activeCourses.length; $('#semester-count').textContent=plan.length;
   $('#undo').disabled=!history.length;
-  $('#board').innerHTML=[...new Set(state.semesters.map(s=>s.year))].map(y=>`<section class="year"><div class="year-heading">${yearName(y)}<span>YEAR ${String(y+1).padStart(2,'0')}</span></div><div class="semesters">${state.semesters.map((s,i)=>s.year===y?i:null).filter(i=>i!==null).map(i=>`<section class="semester"><div class="semester-heading"><h3>${state.semesters[i].term}</h3><span>${plan[i].length} courses</span></div><div class="course-list" data-semester="${i}" aria-label="${semesterName(i)} courses">${plan[i].map(key=>{const c=byKey.get(key), warnings=conflicts(c,plan,courses);return `<button class="course-card ${category(c)} ${warnings.length?'warning':''}" draggable="true" data-key="${key}" data-course-id="${esc(c.id.trim())}" aria-label="${esc(c.label)}, ${esc(c.name)}, ${credits([c])} credits. Open details to move course."><span class="grip" aria-hidden="true">⠿</span><span class="course-code">${esc(c.label)}</span>${c.name!==c.label?`<span class="course-name">${esc(c.name)}</span>`:''}${state.notes[key]?`<span class="course-note">${esc(state.notes[key])}</span>`:''}<span class="course-meta"><span>${credits([c])} ${c.max===1?'credit':'credits'}</span>${warnings.length?'<span title="Check prerequisites">⚠</span>':''}</span></button>`;}).join('')}</div><div class="semester-total"><span>Semester total</span><strong>${credits(plan[i].map(k=>byKey.get(k)))} cr.</strong></div></section>`).join('')}</div></section>`).join('');
+  $('#board').innerHTML=[...new Set(state.semesters.map(s=>s.year))].map(y=>`<section class="year"><div class="year-heading">${yearName(y)}<span>YEAR ${String(y+1).padStart(2,'0')}</span></div><div class="semesters">${state.semesters.map((s,i)=>s.year===y?i:null).filter(i=>i!==null).map(i=>`<section class="semester"><div class="semester-heading"><h3>${state.semesters[i].term}</h3><span>${plan[i].length} courses</span></div><div class="course-list" data-semester="${i}" aria-label="${semesterName(i)} courses">${plan[i].map(key=>{const c=byKey.get(key), warnings=conflicts(c,plan,courses);return `<button class="course-card ${category(c)} ${warnings.length?'warning':''}" draggable="true" data-key="${key}" data-course-id="${esc(c.id.trim())}" aria-label="${esc(c.label)}, ${esc(c.name)}, ${credits([c])} credits. Open details to edit credits or move course."><span class="grip" aria-hidden="true">⠿</span><span class="course-code">${esc(c.label)}</span>${c.name!==c.label?`<span class="course-name">${esc(c.name)}</span>`:''}${state.notes[key]?`<span class="course-note">${esc(state.notes[key])}</span>`:''}<span class="course-meta"><span>${credits([c])} ${courseCredits(state,c).max===1?'credit':'credits'}</span>${warnings.length?'<span title="Check prerequisites">⚠</span>':''}</span></button>`;}).join('')}</div><div class="semester-total"><span>Semester total</span><strong>${credits(plan[i].map(k=>byKey.get(k)))} cr.</strong></div></section>`).join('')}</div></section>`).join('');
   const warningCount=activeCourses.filter(c=>conflicts(c,plan,courses).length).length;
   $('#plan-status').textContent=warningCount?`${warningCount} ${warningCount===1?'course needs':'courses need'} a prerequisite review`:'Your plan is ready to explore';
 }
@@ -830,9 +845,9 @@ function openCourse(key) {
   const post=courses.filter(next=>next.pre.includes(c.id));
   highlightRelations(key);
   const chips = list => list.map(c=>`<span class="relation-chip">${esc(c.label)}</span>`).join('');
-  $('#detail-content').innerHTML=`<div class="eyebrow">${esc(c.label)}</div><h2>${esc(c.name)}</h2><span class="detail-badge">${credits([c])} credits</span><p>${esc(c.description)}</p>${warnings.length?`<p class="detail-warning">${warnings.map(esc).join('<br>')}</p>`:''}<h3>Prerequisites</h3>${pre.length?chips(pre):'<p>No prerequisites listed in this map.</p>'}${co.length?`<h3>Concurrent registration</h3>${chips(co)}`:''}${post.length?`<h3>Leads to</h3>${chips(post)}`:''}<h3><label for="move-semester">Move to semester</label></h3><div class="move-row"><select id="move-semester">${plan.map((s,i)=>`<option value="${i}" ${s.includes(key)?'selected':''}>${semesterName(i)}</option>`).join('')}</select><button class="primary" id="move-course">Move course →</button></div><h3><label for="course-note">Course note</label></h3><textarea id="course-note" rows="3" placeholder="Intended elective or selective, e.g. ECE 404">${esc(state.notes[key]||'')}</textarea><div class="dialog-actions"><button id="delete-course" class="danger">Delete course</button><button id="save-note" class="primary">Save note</button></div><p><a href="${esc(c.url||source)}" target="_blank" rel="noreferrer">View academic reference ↗</a></p>`;
+  $('#detail-content').innerHTML=`<div class="eyebrow">${esc(c.label)}</div><h2>${esc(c.name)}</h2><span class="detail-badge">${credits([c])} credits</span><p>${esc(c.description)}</p>${warnings.length?`<p class="detail-warning">${warnings.map(esc).join('<br>')}</p>`:''}<h3>Prerequisites</h3>${pre.length?chips(pre):'<p>No prerequisites listed in this map.</p>'}${co.length?`<h3>Concurrent registration</h3>${chips(co)}`:''}${post.length?`<h3>Leads to</h3>${chips(post)}`:''}<h3><label for="move-semester">Move to semester</label></h3><div class="move-row"><select id="move-semester">${plan.map((s,i)=>`<option value="${i}" ${s.includes(key)?'selected':''}>${semesterName(i)}</option>`).join('')}</select><button class="primary" id="move-course">Move course →</button></div><h3><label for="course-credits">Credit hours</label></h3><input id="course-credits" type="number" min="0" max="30" step="any" value="${state.creditHours?.[key] ?? ''}" placeholder="${c.min===c.max?c.min:`${c.min}&ndash;${c.max}`}" aria-describedby="credit-help"><p id="credit-help">Enter the credits for your course option. Leave blank to use the default (${c.min===c.max?c.min:`${c.min}&ndash;${c.max}`} credits).</p><h3><label for="course-note">Course note</label></h3><textarea id="course-note" rows="3" placeholder="Intended elective or selective, e.g. ECE 404">${esc(state.notes[key]||'')}</textarea><div class="dialog-actions"><button id="delete-course" class="danger">Delete course</button><button id="save-note" class="primary">Save changes</button></div><p><a href="${esc(c.url||source)}" target="_blank" rel="noreferrer">View academic reference ↗</a></p>`;
   $('#move-course').onclick=()=>{const target=+$('#move-semester').value;commit(moveCourse(plan,key,target),`${c.label} moved to ${semesterName(target)}`);$('#details').close();};
-  $('#save-note').onclick=()=>{commit(setCourseNote(state,key,$('#course-note').value),'Course note saved');$('#details').close();};
+  $('#save-note').onclick=()=>{const input=$('#course-credits');if(!input.reportValidity())return;const next=setCourseCredits(state,key,input.value===''?null:input.valueAsNumber);commit(setCourseNote(next,key,$('#course-note').value),'Course changes saved');$('#details').close();};
   $('#delete-course').onclick=()=>{commit(deleteCourse(state,key),`${c.label} deleted. Use Undo to restore it.`);$('#details').close();};
   $('#details').showModal();
 }
@@ -866,7 +881,7 @@ $('#semester-form').onsubmit=e=>{
 $('#help').onclick=()=>$('#help-dialog').showModal();
 document.querySelectorAll('.close').forEach(b=>b.onclick=()=>b.closest('dialog').close());
 $('#details').addEventListener('close',()=>{selected=null;highlightRelations(null);});
-$('#export').onclick=()=>{const rows=[['Year','Semester','Course','Title','Minimum credits','Maximum credits','Scheduling notes','Course note'],...plan.flatMap((keys,i)=>keys.map(k=>{const c=byKey.get(k);return[yearName(state.semesters[i].year),state.semesters[i].term,c.label,c.name,c.min,c.max,conflicts(c,plan,courses).join('; '),state.notes[k]||''];}))];const csv=rows.map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download='purdue-ee-plan-2025-26.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);notify('Your curriculum plan has been exported');};
+$('#export').onclick=()=>{const rows=[['Year','Semester','Course','Title','Minimum credits','Maximum credits','Scheduling notes','Course note'],...plan.flatMap((keys,i)=>keys.map(k=>{const c=byKey.get(k);return[yearName(state.semesters[i].year),state.semesters[i].term,c.label,c.name,courseCredits(state,c).min,courseCredits(state,c).max,conflicts(c,plan,courses).join('; '),state.notes[k]||''];}))];const csv=rows.map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download='purdue-ee-plan-2025-26.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);notify('Your curriculum plan has been exported');};
 render();
 
 })();
